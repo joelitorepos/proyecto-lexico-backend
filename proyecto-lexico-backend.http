@@ -1,0 +1,6 @@
+@proyecto_lexico_backend_HostAddress = http://localhost:5112
+
+GET {{proyecto_lexico_backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
