@@ -120,6 +120,8 @@ class LoginOut(BaseModel):
     id_usuario: int
     nickname: str
     mensaje: str
+    access_token: str
+    token_type: str = "bearer"
 
 
 class VerificarQrIn(BaseModel):
