@@ -1,16 +1,15 @@
+
 """Caso de uso: iniciar sesión de un usuario."""
 import logging
 
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
 
 from app.database import engine
 from app.services import seguridad
+from app.services.jwt_service import generar_token
 from app.schemas.auth import LoginIn, LoginOut
 
 logger = logging.getLogger(__name__)
-
-CODIGO_ERROR_NEGOCIO = 1644
 
 
 class CredencialesInvalidasError(Exception):
@@ -18,11 +17,8 @@ class CredencialesInvalidasError(Exception):
 
 
 def iniciar_sesion(datos: LoginIn, ip: str) -> LoginOut:
-    """Valida credenciales con bcrypt y registra el login en bitácora.
+    """Verifica las credenciales, registra el acceso y genera un JWT."""
 
-    No distingue entre 'correo no existe' y 'contraseña incorrecta' en el
-    mensaje de error, para no filtrar qué correos están registrados.
-    """
     if engine is None:
         raise RuntimeError("DATABASE_URL no está configurada")
 
@@ -35,16 +31,23 @@ def iniciar_sesion(datos: LoginIn, ip: str) -> LoginOut:
             {"correo": datos.email},
         ).mappings().first()
 
-        # Mismo error para "no existe" y "contraseña mal": no filtramos existencia
+        # No revelar si el correo existe.
         if fila is None or not fila["estado"]:
             raise CredencialesInvalidasError()
 
-        if not seguridad.verificar_password(datos.password, fila["password_hash"]):
+        # Verificar contraseña con bcrypt.
+        if not seguridad.verificar_password(
+            datos.password,
+            fila["password_hash"],
+        ):
             raise CredencialesInvalidasError()
 
-        # Registrar login en bitácora con el SP que ya tienes
+        # Registrar el inicio de sesión en la bitácora.
         conn.execute(
-            text("CALL sp_registrar_login(:id_usuario, :ip, :descripcion)"),
+            text(
+                "CALL sp_registrar_login("
+                ":id_usuario, :ip, :descripcion)"
+            ),
             {
                 "id_usuario": fila["id_usuario"],
                 "ip": ip,
@@ -52,8 +55,13 @@ def iniciar_sesion(datos: LoginIn, ip: str) -> LoginOut:
             },
         )
 
+    # Generar token JWT después de verificar las credenciales.
+    token = generar_token(fila["id_usuario"])
+
     return LoginOut(
         id_usuario=fila["id_usuario"],
         nickname=fila["nickname"],
         mensaje="Inicio de sesión correcto",
+        access_token=token,
+        token_type="bearer",
     )
